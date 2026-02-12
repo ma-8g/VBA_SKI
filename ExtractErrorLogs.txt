@@ -10,56 +10,58 @@ Sub ExtractErrorLogs()
     Dim foundCell As Range
     Dim firstAddress As String
 
-    ' --- 1. フォルダ選択 (FileDialogを使用) ---
+    ' --- 1. フォルダ選択 ---
     With Application.FileDialog(msoFileDialogFolderPicker)
         .Title = "ログファイルが入ったフォルダを選択してください"
         If .Show = True Then
             folderPath = .SelectedItems(1) & "\"
         Else
-            MsgBox "処理をキャンセルしました。"
             Exit Sub
         End If
     End With
 
-    ' --- 2. 書き出し先の準備 ---
+    ' --- 2. 書き出し先の準備 (Sheet1) ---
     Set wsDest = ThisWorkbook.Sheets("Sheet1")
-    ' A列の最終行を確認して、次の行から書き込む
-    destRow = wsDest.Cells(wsDest.Rows.Count, "A").End(xlUp).Row + 1
-    If destRow = 1 Or wsDest.Cells(1, 1).Value = "" Then
-        ' 見出しがない場合は作成
-        wsDest.Range("A1:C1").Value = Array("ファイル名", "区分", "内容")
-        destRow = 2
-    End If
+    ' 見出しの設定
+    wsDest.Range("A1:E1").Value = Array("ブック名", "シート名", "セル番号", "区分", "内容")
+    
+    ' 2行目以降の既存データをクリア（新しく抽出する場合）
+    wsDest.Rows("2:" & wsDest.Rows.Count).Clear
+    destRow = 2
 
     ' --- 3. メイン処理 ---
     keywords = Array("ERROR", "EXCEPTION")
-    fileName = Dir(folderPath & "*.xls*") ' エクセルファイルを検索
+    fileName = Dir(folderPath & "*.xls*")
 
-    Application.ScreenUpdating = False ' 画面更新を止めて高速化
+    Application.ScreenUpdating = False
 
     Do While fileName <> ""
-        ' 自分自身は開かない
         If fileName <> ThisWorkbook.Name Then
+            ' 読み取り専用で開く
             Set wbSource = Workbooks.Open(folderPath & fileName, ReadOnly:=True)
             
-            ' 「ログ」シートがあるかチェック
             On Error Resume Next
             Set wsLog = wbSource.Sheets("ログ")
             On Error GoTo 0
             
             If Not wsLog Is Nothing Then
-                ' キーワードごとに検索
                 For Each key In keywords
-                    ' 完全一致ではなく「含む」で検索、大文字小文字を区別する
+                    ' 検索実行
                     Set foundCell = wsLog.Cells.Find(What:=key, LookAt:=xlPart, MatchCase:=True)
                     
                     If Not foundCell Is Nothing Then
                         firstAddress = foundCell.Address
                         Do
-                            ' 書き出し
+                            ' A:ブック名
                             wsDest.Cells(destRow, 1).Value = fileName
-                            wsDest.Cells(destRow, 2).Value = key
-                            foundCell.Copy wsDest.Cells(destRow, 3) ' 書式ごとコピー
+                            ' B:シート名
+                            wsDest.Cells(destRow, 2).Value = wsLog.Name
+                            ' C:セル番号 (例: $A$10)
+                            wsDest.Cells(destRow, 3).Value = foundCell.Address
+                            ' D:区分
+                            wsDest.Cells(destRow, 4).Value = key
+                            ' E:対象セルを貼り付け (書式込)
+                            foundCell.Copy wsDest.Cells(destRow, 5)
                             
                             destRow = destRow + 1
                             Set foundCell = wsLog.Cells.FindNext(foundCell)
@@ -71,9 +73,9 @@ Sub ExtractErrorLogs()
             wbSource.Close SaveChanges:=False
             Set wsLog = Nothing
         End If
-        fileName = Dir() ' 次のファイルを探す
+        fileName = Dir()
     Loop
 
     Application.ScreenUpdating = True
-    MsgBox "すべてのファイルの確認が完了しました！", vbInformation
+    MsgBox "抽出が完了しました。合計 " & (destRow - 2) & " 件見つかりました。", vbInformation
 End Sub
