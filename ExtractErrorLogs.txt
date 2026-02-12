@@ -1,0 +1,75 @@
+Sub ExtractErrorLogs()
+    Dim targetFolder As String
+    Dim fileName As String
+    Dim wbSource As Workbook
+    Dim wsLog As Worksheet
+    Dim wsDest As Worksheet
+    Dim destRow As Long
+    Dim keywords As Variant
+    Dim key As Variant
+    Dim foundCell As Range
+    Dim firstAddress As String
+    Dim shellApp As Object
+    
+    ' --- 設定エリア ---
+    ' フォルダ選択ダイアログを表示
+    Set shellApp = CreateObject("Shell.Application")
+    Set targetFolder = shellApp.BrowseForFolder(0, "ログファイルが入ったフォルダを選択してください", 0)
+    
+    If targetFolder Is Nothing Then Exit Sub
+    targetFolder = targetFolder.Self.Path & "\"
+    
+    ' 書き出し先のシートを設定
+    Set wsDest = ThisWorkbook.Sheets("Sheet1")
+    ' 書き出し開始行（2行目から。1行目は見出しを想定）
+    destRow = wsDest.Cells(wsDest.Rows.Count, "A").End(xlUp).Row + 1
+    If destRow = 1 Then destRow = 2
+    
+    ' 検索キーワードの設定
+    keywords = Array("ERROR", "EXCEPTION")
+    ' ------------------
+
+    ' フォルダ内のExcelファイルを検索
+    fileName = Dir(targetFolder & "*.xls*")
+
+    Application.ScreenUpdating = False ' 画面更新停止（高速化）
+
+    Do While fileName <> ""
+        ' マクロ実行ブック自身はスキップ
+        If fileName <> ThisWorkbook.Name Then
+            Set wbSource = Workbooks.Open(targetFolder & fileName, ReadOnly:=True)
+            
+            ' 「ログ」シートの存在確認
+            On Error Resume Next
+            Set wsLog = wbSource.Sheets("ログ")
+            On Error GoTo 0
+            
+            If Not wsLog Is Nothing Then
+                ' 各キーワードについて検索を実行
+                For Each key In keywords
+                    Set foundCell = wsLog.Cells.Find(What:=key, LookAt:=xlPart, MatchCase:=True)
+                    
+                    If Not foundCell Is Nothing Then
+                        firstAddress = foundCell.Address
+                        Do
+                            ' 書き出し処理
+                            wsDest.Cells(destRow, 1).Value = fileName    ' A列：ブック名
+                            wsDest.Cells(destRow, 2).Value = key         ' B列：キーワード
+                            foundCell.Copy wsDest.Cells(destRow, 3)      ' C列：セル内容（書式含む）
+                            
+                            destRow = destRow + 1
+                            Set foundCell = wsLog.Cells.FindNext(foundCell)
+                        Loop While Not foundCell Is Nothing And foundCell.Address <> firstAddress
+                    End If
+                Next key
+            End If
+            
+            wbSource.Close SaveChanges:=False
+            Set wsLog = Nothing
+        End If
+        fileName = Dir() ' 次のファイルへ
+    Loop
+
+    Application.ScreenUpdating = True
+    MsgBox "抽出が完了しました。", vbInformation
+End Sub
