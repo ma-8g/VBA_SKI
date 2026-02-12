@@ -1,5 +1,5 @@
 Sub ExtractErrorLogs()
-    Dim targetFolder As String
+    Dim folderPath As String
     Dim fileName As String
     Dim wbSource As Workbook
     Dim wsLog As Worksheet
@@ -9,53 +9,57 @@ Sub ExtractErrorLogs()
     Dim key As Variant
     Dim foundCell As Range
     Dim firstAddress As String
-    Dim shellApp As Object
-    
-    ' --- 設定エリア ---
-    ' フォルダ選択ダイアログを表示
-    Set shellApp = CreateObject("Shell.Application")
-    Set targetFolder = shellApp.BrowseForFolder(0, "ログファイルが入ったフォルダを選択してください", 0)
-    
-    If targetFolder Is Nothing Then Exit Sub
-    targetFolder = targetFolder.Self.Path & "\"
-    
-    ' 書き出し先のシートを設定
+
+    ' --- 1. フォルダ選択 (FileDialogを使用) ---
+    With Application.FileDialog(msoFileDialogFolderPicker)
+        .Title = "ログファイルが入ったフォルダを選択してください"
+        If .Show = True Then
+            folderPath = .SelectedItems(1) & "\"
+        Else
+            MsgBox "処理をキャンセルしました。"
+            Exit Sub
+        End If
+    End With
+
+    ' --- 2. 書き出し先の準備 ---
     Set wsDest = ThisWorkbook.Sheets("Sheet1")
-    ' 書き出し開始行（2行目から。1行目は見出しを想定）
+    ' A列の最終行を確認して、次の行から書き込む
     destRow = wsDest.Cells(wsDest.Rows.Count, "A").End(xlUp).Row + 1
-    If destRow = 1 Then destRow = 2
-    
-    ' 検索キーワードの設定
+    If destRow = 1 Or wsDest.Cells(1, 1).Value = "" Then
+        ' 見出しがない場合は作成
+        wsDest.Range("A1:C1").Value = Array("ファイル名", "区分", "内容")
+        destRow = 2
+    End If
+
+    ' --- 3. メイン処理 ---
     keywords = Array("ERROR", "EXCEPTION")
-    ' ------------------
+    fileName = Dir(folderPath & "*.xls*") ' エクセルファイルを検索
 
-    ' フォルダ内のExcelファイルを検索
-    fileName = Dir(targetFolder & "*.xls*")
-
-    Application.ScreenUpdating = False ' 画面更新停止（高速化）
+    Application.ScreenUpdating = False ' 画面更新を止めて高速化
 
     Do While fileName <> ""
-        ' マクロ実行ブック自身はスキップ
+        ' 自分自身は開かない
         If fileName <> ThisWorkbook.Name Then
-            Set wbSource = Workbooks.Open(targetFolder & fileName, ReadOnly:=True)
+            Set wbSource = Workbooks.Open(folderPath & fileName, ReadOnly:=True)
             
-            ' 「ログ」シートの存在確認
+            ' 「ログ」シートがあるかチェック
             On Error Resume Next
             Set wsLog = wbSource.Sheets("ログ")
             On Error GoTo 0
             
             If Not wsLog Is Nothing Then
-                ' 各キーワードについて検索を実行
+                ' キーワードごとに検索
                 For Each key In keywords
+                    ' 完全一致ではなく「含む」で検索、大文字小文字を区別する
                     Set foundCell = wsLog.Cells.Find(What:=key, LookAt:=xlPart, MatchCase:=True)
                     
                     If Not foundCell Is Nothing Then
                         firstAddress = foundCell.Address
                         Do
-                            ' 書き出し処理
-                            wsDest.Cells(destRow, 1).Value = fileName    ' A列：ブック名
-                            wsDest.Cells(destRow, 2).Value = key         ' B列：キーワード
-                            foundCell.Copy wsDest.Cells(destRow, 3)      ' C列：セル内容（書式含む）
+                            ' 書き出し
+                            wsDest.Cells(destRow, 1).Value = fileName
+                            wsDest.Cells(destRow, 2).Value = key
+                            foundCell.Copy wsDest.Cells(destRow, 3) ' 書式ごとコピー
                             
                             destRow = destRow + 1
                             Set foundCell = wsLog.Cells.FindNext(foundCell)
@@ -67,9 +71,9 @@ Sub ExtractErrorLogs()
             wbSource.Close SaveChanges:=False
             Set wsLog = Nothing
         End If
-        fileName = Dir() ' 次のファイルへ
+        fileName = Dir() ' 次のファイルを探す
     Loop
 
     Application.ScreenUpdating = True
-    MsgBox "抽出が完了しました。", vbInformation
+    MsgBox "すべてのファイルの確認が完了しました！", vbInformation
 End Sub
