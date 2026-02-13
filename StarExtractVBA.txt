@@ -1,0 +1,95 @@
+Option Explicit
+
+Sub LogExtractor()
+    ' --- 設定・変数定義 ---
+    Dim targetFolder As String
+    Dim fileName As String
+    Dim wbSource As Workbook
+    Dim wsSource As Worksheet
+    Dim wsDest As Worksheet
+    Dim lastRow As Long
+    Dim searchKeywords As Variant
+    Dim keyword As Variant
+    Dim foundCell As Range
+    Dim firstAddress As String
+    Dim hitCount As Long
+    
+    ' 検索キーワードの設定（メンテナンス用）
+    searchKeywords = Array("☆", "★")
+    
+    ' 出力先シートの設定
+    Set wsDest = ThisWorkbook.Sheets("Sheet1")
+    
+    ' --- 1. フォルダ選択 ---
+    With Application.FileDialog(msoFileDialogFolderPicker)
+        .Title = "ログ抽出対象のフォルダを選択してください"
+        If .Show = True Then
+            targetFolder = .SelectedItems(1) & "\"
+        Else
+            Exit Sub ' キャンセル時は中断
+        End If
+    End With
+    
+    ' 動作高速化
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.DisplayAlerts = False
+    
+    ' --- 前回のデータをクリア ---
+    wsDest.UsedRange.Offset(1, 0).Clear
+    lastRow = 2
+    hitCount = 0
+    
+    ' --- 2. ファイル巡回 ---
+    fileName = Dir(targetFolder & "*.xls*")
+    
+    Do While fileName <> ""
+        ' 自ブックは除外
+        If fileName <> ThisWorkbook.Name Then
+            Set wbSource = Workbooks.Open(Filename:=targetFolder & fileName, UpdateLinks:=False, ReadOnly:=True)
+            
+            ' --- 3. データ検索 ---
+            ' 「ログ」シートの存在確認
+            On Error Resume Next
+            Set wsSource = wbSource.Sheets("ログ")
+            On Error GoTo 0
+            
+            If Not wsSource Is Nothing Then
+                ' 各キーワードで検索
+                For Each keyword In searchKeywords
+                    Set foundCell = wsSource.Cells.Find(What:=keyword, LookAt:=xlPart, MatchCase:=True)
+                    
+                    If Not foundCell Is Nothing Then
+                        firstAddress = foundCell.Address
+                        Do
+                            ' --- 4. 結果集計（書き出し） ---
+                            wsDest.Cells(lastRow, 1).Value = fileName            ' A列: ブック名
+                            wsDest.Cells(lastRow, 2).Value = wsSource.Name       ' B列: シート名
+                            wsDest.Cells(lastRow, 3).Value = foundCell.Address   ' C列: セル番号
+                            
+                            ' ヒットしたセルの行のB列を書式ごとコピー
+                            wsSource.Cells(foundCell.Row, "B").Copy Destination:=wsDest.Cells(lastRow, 5) ' E列
+                            
+                            lastRow = lastRow + 1
+                            hitCount = hitCount + 1
+                            
+                            ' 次のセルを検索
+                            Set foundCell = wsSource.Cells.FindNext(foundCell)
+                        Loop While Not foundCell Is Nothing And foundCell.Address <> firstAddress
+                    End If
+                Next keyword
+            End If
+            
+            wbSource.Close SaveChanges:=False
+            Set wsSource = Nothing
+        End If
+        fileName = Dir()
+    Loop
+    
+    ' --- 5. 終了処理 ---
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.DisplayAlerts = True
+    
+    MsgBox "抽出が完了しました。" & vbCrLf & "抽出件数: " & hitCount & " 件", vbInformation
+End Sub
