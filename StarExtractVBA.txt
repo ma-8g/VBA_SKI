@@ -17,9 +17,24 @@ Sub LogExtractor()
     ' 検索キーワードの設定（メンテナンス用）
     searchKeywords = Array("☆", "★")
     
-    ' 出力先シートの設定
-    Set wsDest = ThisWorkbook.Sheets("Sheet1")
+    ' --- 出力先シート「星一覧」の設定と準備 ---
+    On Error Resume Next
+    Set wsDest = ThisWorkbook.Sheets("星一覧")
+    On Error GoTo 0
     
+    ' シートが存在しない場合は作成
+    If wsDest Is Nothing Then
+        Set wsDest = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        wsDest.Name = "星一覧"
+    End If
+    
+    ' 見出しの設定
+    With wsDest
+        .Cells.Clear ' 前回のデータをクリア
+        .Range("A1:E1").Value = Array("ブック名", "シート名", "セル番号", "", "内容")
+        lastRow = 2
+    End With
+
     ' --- 1. フォルダ選択 ---
     With Application.FileDialog(msoFileDialogFolderPicker)
         .Title = "ログ抽出対象のフォルダを選択してください"
@@ -35,9 +50,6 @@ Sub LogExtractor()
     Application.Calculation = xlCalculationManual
     Application.DisplayAlerts = False
     
-    ' --- 前回のデータをクリア ---
-    wsDest.UsedRange.Offset(1, 0).Clear
-    lastRow = 2
     hitCount = 0
     
     ' --- 2. ファイル巡回 ---
@@ -50,6 +62,7 @@ Sub LogExtractor()
             
             ' --- 3. データ検索 ---
             ' 「ログ」シートの存在確認
+            Set wsSource = Nothing
             On Error Resume Next
             Set wsSource = wbSource.Sheets("ログ")
             On Error GoTo 0
@@ -81,15 +94,17 @@ Sub LogExtractor()
             End If
             
             wbSource.Close SaveChanges:=False
-            Set wsSource = Nothing
         End If
         fileName = Dir()
     Loop
+    
+    ' 列幅の自動調整
+    wsDest.Columns("A:E").AutoFit
     
     ' --- 5. 終了処理 ---
     Application.ScreenUpdating = True
     Application.Calculation = xlCalculationAutomatic
     Application.DisplayAlerts = True
     
-    MsgBox "抽出が完了しました。" & vbCrLf & "抽出件数: " & hitCount & " 件", vbInformation
+    MsgBox "抽出が完了しました。" & vbCrLf & "出力先: 星一覧シート" & vbCrLf & "抽出件数: " & hitCount & " 件", vbInformation
 End Sub
