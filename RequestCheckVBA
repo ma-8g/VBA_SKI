@@ -1,0 +1,80 @@
+Sub CopyRequestDetails()
+    Dim wbMacro As Workbook
+    Dim wsList As Worksheet
+    Dim wbEvidence As Workbook
+    Dim wsEvidence As Worksheet
+    Dim wsNew As Worksheet
+    Dim folderPath As String
+    Dim testNo As String
+    Dim i As Long
+    Dim lastRow As Long
+    Dim targetFile As String
+
+    Set wbMacro = ThisWorkbook
+    Set wsList = wbMacro.Sheets("テスト番号")
+
+    ' 1. エビデンスフォルダの選択
+    With Application.FileDialog(msoFileDialogFolderPicker)
+        .Title = "エビデンスフォルダを指定してください。"
+        If .Show = True Then
+            folderPath = .SelectedItems(1) & "\"
+        Else
+            Exit Sub ' キャンセル時は終了
+        End If
+    End With
+
+    ' 2. 「テスト番号」シートのA2から最終行までループ
+    lastRow = wsList.Cells(wbMacro.Sheets("テスト番号").Rows.Count, "A").End(xlUp).Row
+    
+    If lastRow < 2 Then
+        MsgBox "テスト番号が入力されていません。", vbExclamation
+        Exit Sub
+    End If
+
+    Application.ScreenUpdating = False ' 画面更新停止（高速化）
+
+    For i = 2 To lastRow
+        testNo = wsList.Cells(i, 1).Value
+        
+        If testNo <> "" Then
+            targetFile = folderPath & testNo & ".xlsx"
+            
+            ' ファイルの存在確認
+            If Dir(targetFile) <> "" Then
+                ' エビデンスブックを開く（読み取り専用）
+                Set wbEvidence = Workbooks.Open(targetFile, ReadOnly:=True)
+                
+                On Error Resume Next
+                Set wsEvidence = wbEvidence.Sheets("リクエスト内容詳細確認")
+                On Error GoTo 0
+                
+                If Not wsEvidence Is Nothing Then
+                    ' 3. シートの作成（既存なら削除して作り直し）
+                    On Error Resume Next
+                    Application.DisplayAlerts = False
+                    wbMacro.Sheets(testNo).Delete
+                    Application.DisplayAlerts = True
+                    On Error GoTo 0
+                    
+                    Set wsNew = wbMacro.Sheets.Add(After:=wbMacro.Sheets(wbMacro.Sheets.Count))
+                    wsNew.Name = testNo
+                    
+                    ' 4. D3:D1000をコピーしてA1に貼り付け
+                    wsEvidence.Range("D3:D1000").Copy Destination:=wsNew.Range("A1")
+                    
+                    Set wsEvidence = Nothing
+                Else
+                    MsgBox "シート「リクエスト内容詳細確認」が見つかりません: " & testNo, vbCritical
+                End If
+                
+                ' エビデンスブックを閉じる
+                wbEvidence.Close SaveChanges:=False
+            Else
+                MsgBox "ファイルが見つかりません: " & targetFile, vbCritical
+            End If
+        End If
+    Next i
+
+    Application.ScreenUpdating = True
+    MsgBox "処理が完了しました。", vbInformation
+End Sub
