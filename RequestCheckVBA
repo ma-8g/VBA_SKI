@@ -156,3 +156,67 @@ Sub CopyFromScenario()
     
     MsgBox "処理が完了しました。", vbInformation
 End Sub
+
+
+Sub CompareAndCheckResults()
+    Dim wbMacro As Workbook
+    Dim wsList As Worksheet
+    Dim wsTarget As Worksheet
+    Dim testNo As String
+    Dim i As Long
+    Dim lastRowList As Long
+    Dim lastRowData As Long
+    Dim allMatch As Boolean
+    
+    Set wbMacro = ThisWorkbook
+    Set wsList = wbMacro.Sheets("テスト番号")
+    
+    ' 「テスト番号」シートのA2から最終行までループ
+    lastRowList = wsList.Cells(wsList.Rows.Count, "A").End(xlUp).Row
+    
+    If lastRowList < 2 Then
+        MsgBox "テスト番号が入力されていません。", vbExclamation
+        Exit Sub
+    End If
+
+    Application.ScreenUpdating = False
+
+    For i = 2 To lastRowList
+        testNo = wsList.Cells(i, 1).Value
+        
+        If testNo <> "" Then
+            ' 1. テスト番号と同じ名前のシートが存在するか確認
+            On Error Resume Next
+            Set wsTarget = wbMacro.Sheets(testNo)
+            On Error GoTo 0
+            
+            If Not wsTarget Is Nothing Then
+                ' 2. A列とB列の比較（C列に数式をセット）
+                ' A列またはB列のデータがある最終行を取得（最大1000行とする）
+                lastRowData = 1000
+                
+                ' C列に比較式「=A1=B1」を一括セット
+                wsTarget.Range("C1:C" & lastRowData).Formula = "=A1=B1"
+                
+                ' 3. D1に全体の判定をセット
+                ' COUNTIFでC列の中にFALSEが1つでもあるか確認
+                If WorksheetFunction.CountIf(wsTarget.Range("C1:C" & lastRowData), False) > 0 Then
+                    wsTarget.Range("D1").Value = False
+                Else
+                    wsTarget.Range("D1").Value = True
+                End If
+                
+                ' 4. 「テスト番号」シートのB列に結果を書き戻す
+                wsList.Cells(i, 2).Value = wsTarget.Range("D1").Value
+                
+                Set wsTarget = Nothing
+            Else
+                ' シートが見つからない場合は「エラー」など記載
+                wsList.Cells(i, 2).Value = "シートなし"
+            End If
+        End If
+    Next i
+
+    Application.ScreenUpdating = True
+    MsgBox "比較処理が完了しました。", vbInformation
+End Sub
