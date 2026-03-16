@@ -78,3 +78,81 @@ Sub CopyRequestDetails()
     Application.ScreenUpdating = True
     MsgBox "処理が完了しました。", vbInformation
 End Sub
+
+
+Sub CopyFromScenario()
+    Dim wbMacro As Workbook
+    Dim wsList As Worksheet
+    Dim wbScenario As Workbook
+    Dim wsScenario As Worksheet
+    Dim wsTarget As Worksheet
+    Dim scenarioPath As Variant
+    Dim testNo As String
+    Dim i As Long
+    Dim lastRow As Long
+    Dim foundRange As Range
+    
+    Set wbMacro = ThisWorkbook
+    Set wsList = wbMacro.Sheets("テスト番号")
+    
+    ' 1. テストシナリオファイルの選択
+    scenarioPath = Application.GetOpenFilename(FileFilter:="Excel Book (*.xlsx; *.xlsm),*.xlsx;*.xlsm", _
+                                             Title:="テストシナリオを指定してください。")
+    
+    ' キャンセル時は終了
+    If scenarioPath = False Then Exit Sub
+    
+    ' テストシナリオを開く
+    Set wbScenario = Workbooks.Open(scenarioPath, ReadOnly:=True)
+    On Error Resume Next
+    Set wsScenario = wbScenario.Sheets("リクエスト網羅設定内容詳細")
+    On Error GoTo 0
+    
+    If wsScenario Is Nothing Then
+        MsgBox "シート「リクエスト網羅設定内容詳細」が見つかりません。", vbCritical
+        wbScenario.Close SaveChanges:=False
+        Exit Sub
+    End If
+
+    ' 2. マクロブックの「テスト番号」シートを基準にループ
+    lastRow = wsList.Cells(wsList.Rows.Count, "A").End(xlUp).Row
+    
+    Application.ScreenUpdating = False
+    
+    For i = 2 To lastRow
+        testNo = wsList.Cells(i, 1).Value
+        
+        If testNo <> "" Then
+            ' 3. シナリオシートの7行目からテスト番号を検索
+            Set foundRange = wsScenario.Rows(7).Find(What:=testNo, LookAt:=xlWhole)
+            
+            If Not foundRange Is Nothing Then
+                ' マクロブックに該当するシートがあるか確認
+                On Error Resume Next
+                Set wsTarget = wbMacro.Sheets(testNo)
+                On Error GoTo 0
+                
+                If Not wsTarget Is Nothing Then
+                    ' 4. B列の書式を「文字列」に設定
+                    wsTarget.Columns("B").NumberFormatLocal = "@"
+                    
+                    ' 5. 見つけた列の7行目〜1000行目をコピー
+                    ' 6. B1セルに「値のみ」貼り付け
+                    wsScenario.Range(wsScenario.Cells(7, foundRange.Column), wsScenario.Cells(1000, foundRange.Column)).Copy
+                    wsTarget.Range("B1").PasteSpecial Paste:=xlPasteValues
+                    
+                    ' 選択状態を解除
+                    Application.CutCopyMode = False
+                Else
+                    ' シートが存在しない場合はスキップ（または必要に応じてメッセージを表示）
+                End If
+                Set wsTarget = Nothing
+            End If
+        End If
+    Next i
+    
+    wbScenario.Close SaveChanges:=False
+    Application.ScreenUpdating = True
+    
+    MsgBox "処理が完了しました。", vbInformation
+End Sub
