@@ -1,92 +1,108 @@
 Option Explicit
 
-Dim targetBk As Workbook
+Dim targetWb As Workbook
 Dim sheetCount As Long
 
-Sub 集約マクロ_開始()
-    Dim rFolder As String
+Sub MergeCheckSheets()
     Dim fso As Object
+    Dim rootFolderPath As String
+    Dim shellApp As Object
+    Dim folderObj As Object
     
-    ' 集約先のブック（このマクロを実行しているブック）をセット
-    Set targetBk = ThisWorkbook
-    sheetCount = 0
+    ' 1. 集約先ブック（このマクロを実行しているブック）のセット
+    Set targetWb = ThisWorkbook
+    sheetCount = 1
     
-    ' 処理対象のメインフォルダを選択
-    With Application.FileDialog(msoFileDialogFolderPicker)
-        .Title = "処理対象のフォルダを選択してください"
-        If .Show = True Then
-            rFolder = .SelectedItems(1)
-        Else
-            MsgBox "処理をキャンセルしました。", vbInformation
-            Exit Sub
-        End If
+    ' フォルダ選択ダイアログの表示
+    Set shellApp = CreateObject("Shell.Application")
+    Set folderObj = shellApp.BrowseForFolder(0, "処理対象のフォルダを選択してください", 0)
+    
+    If folderObj Is Nothing Then
+        MsgBox "フォルダが選択されなかったため、処理を中断します。", vbExclamation
+        Exit Sub
+    End If
+    
+    rootFolderPath = folderObj.Self.Path
+    
+    ' 画面更新と警告の停止（高速化のため）
+    With Application
+        .ScreenUpdating = False
+        .DisplayAlerts = False
+        .Calculation = xlCalculationManual
     End With
     
-    ' 画面更新と警告非表示で高速化
-    Application.ScreenUpdating = False
-    Application.DisplayAlerts = False
-    
-    ' FileSystemObjectを使ってフォルダ内を再帰的に処理
+    ' FileSystemObjectのインスタンス作成
     Set fso = CreateObject("Scripting.FileSystemObject")
-    Call ProcessFiles(fso.GetFolder(rFolder))
     
-    ' 設定を元に戻す
-    Application.ScreenUpdating = True
-    Application.DisplayAlerts = True
+    ' 再帰処理の開始
+    ProcessFolder fso.GetFolder(rootFolderPath)
     
-    MsgBox "処理が完了しました！" & vbCrLf & "集約シート数: " & sheetCount & " 件", vbInformation
+    ' 設定の元戻し
+    With Application
+        .ScreenUpdating = True
+        .DisplayAlerts = True
+        .Calculation = xlCalculationAutomatic
+    End With
+    
+    MsgBox "処理が完了しました。処理件数: " & (sheetCount - 1) & "件", vbInformation
 End Sub
 
-' フォルダを再帰処理するサブプロシージャ
-Sub ProcessFiles(currentFolder As Object)
+' フォルダを再帰的に処理するサブプロシージャ
+Private Sub ProcessFolder(currentFolder As Object)
+    Dim fileObj As Object
     Dim subFolder As Object
-    Dim file As Object
-    Dim sourceBk As Workbook
+    Dim sourceWb As Workbook
     Dim ws As Worksheet
-    Dim newSheetName As String
+    Dim sheetName As String
     
-    ' 1. フォルダ内のファイルをひとつずつ確認
-    For Each file In currentFolder.Files
-        ' Excelファイルかつ、一時ファイル（~$で始まるもの）や自分自身でない場合
-        If (file.Name Like "*.xls*") And (Not file.Name Like "~$*") And (file.Name <> targetBk.Name) Then
+    ' フォルダ内のファイルをループ処理
+    For Each fileObj In currentFolder.Files
+        ' Excelファイルかつ、一時ファイル（~$で始まるもの）や集約先自身を除外
+        If (LCase(fileObj.Name) Like "*.xls*") And _
+           (Not fileObj.Name Like "~$*") And _
+           (fileObj.Name <> targetWb.Name) Then
             
-            ' ブックを開く
-            Set sourceBk = Workbooks.Open(file.Path, ReadOnly:=True)
-            
-            ' 「チェック仕様」シートが存在するかチェック
             On Error Resume Next
-            Set ws = sourceBk.Sheets("チェック仕様")
-            On Error GoTo 0
+            ' ブックを読み取り専用で開く
+            Set sourceWb = Workbooks.Open(Filename:=fileObj.Path, ReadOnly:=True)
             
-            If Not ws Is Nothing Then
-                ' カウントアップ（連番用）
-                sheetCount = sheetCount + 1
-                ' 3桁の連番（001, 002...）を作成
-                newSheetName = Format(sheetCount, "000")
+            If Not sourceWb Is Nothing Then
+                ' 「チェック仕様」シートが存在するか確認
+                Set ws = Nothing
+                Set ws = sourceWb.Sheets("チェック仕様")
                 
-                ' 2. シートを「全チェック仕様」ブックの末尾にコピー
-                ws.Copy After:=targetBk.Sheets(targetBk.Sheets.Count)
-                
-                ' コピーされたシートに対して処理
-                With targetBk.Sheets(targetBk.Sheets.Count)
-                    ' 3. シート名を連番に変更
-                    .Name = newSheetName
+                If Not ws Is Nothing Then
+                    ' 3桁の連番シート名を生成（例: 001, 002...）
+                    sheetName = Format(sheetCount, "000")
                     
-                    ' 4. 1行目に行を追加し、A1にコピー元ファイル名をセット
-                    .Rows(1).Insert Shift:=xlDown
-                    .Range("A1").Value = sourceBk.Name
-                    ' 少し目立たせるために背景色や太字にしたい場合はここを調整してください
-                End With
+                    ' シートを集約先ブックの末尾にコピー
+                    ws.Copy After:=targetWb.Sheets(targetWb.Sheets.Count)
+                    
+                    ' コピーしたシートの操作
+                    With targetWb.Sheets(targetWb.Sheets.Count)
+                        .Name = sheetName
+                        
+                        ' 4. 1行目に行を追加し、ファイル名をA1にセット
+                        .Rows(1).Insert Shift:=xlDown
+                        .Range("A1").Value = sourceWb.Name
+                        
+                        ' 1行目のセルを折り返しなしに設定
+                        .Rows(1).WrapText = False
+                    End With
+                    
+                    ' カウントをインクリメント
+                    sheetCount = sheetCount + 1
+                End If
+                
+                ' 保存せずに閉じる
+                sourceWb.Close SaveChanges:=False
             End If
-            
-            ' 変数の初期化とブックを閉じる（保存しない）
-            Set ws = Nothing
-            sourceBk.Close SaveChanges:=False
+            On Error GoTo 0
         End If
-    Next file
+    Next fileObj
     
-    ' サブフォルダがある場合は、自分自身を呼び出して再帰処理
+    ' サブフォルダがある場合は再帰的に呼び出し
     For Each subFolder In currentFolder.SubFolders
-        Call ProcessFiles(subFolder)
+        ProcessFolder subFolder
     Next subFolder
 End Sub
