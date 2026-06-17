@@ -1,0 +1,88 @@
+Option Explicit
+
+Dim serialNumber As Long ' 連番管理用の変数
+Dim destWorkbook As Workbook ' コピー先の「全チェック仕様」ブック
+
+Sub MergeCheckSheets()
+    Dim targetFolder As String
+    Dim fso As Object
+    
+    ' 1. コピー先（このマクロを実行しているブック）を設定
+    Set destWorkbook = ThisWorkbook
+    serialNumber = 1 ' 連番を001からスタート
+    
+    ' 2. 処理対象のメインフォルダを選択
+    With Application.FileDialog(msoFileDialogFolderPicker)
+        .Title = "対象のメインフォルダを選択してください"
+        If .Show = True Then
+            targetFolder = .SelectedItems(1)
+        Else
+            MsgBox "処理がキャンセルされました。", vbInformation
+            Exit Sub
+        End If
+    End With
+    
+    ' 画面更新と警告を非表示にして高速化
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    ' 3. FSOを使ってフォルダの再帰処理を開始
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    ProcessFolder fso.GetFolder(targetFolder)
+    
+    ' 設定を元に戻す
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    
+    MsgBox "完了しました！" & vbCrLf & "集約シート数: " & (serialNumber - 1) & " 枚", vbInformation
+End Sub
+
+' フォルダを再帰的に処理するサブプロシージャ
+Sub ProcessFolder(folder As Object)
+    Dim file As Object
+    Dim subFolder As Object
+    Dim srcWorkbook As Workbook
+    Dim ws As Worksheet
+    Dim sheetName As String
+    
+    ' フォルダ内のファイルを1つずつ確認
+    For Each file In folder.Files
+        ' Excelファイル（拡張子が .xls*）かつ、一時ファイル（~$）でない場合
+        If (file.Name Like "*.xls*") And (Not file.Name Like "~$*") And (file.Path <> destWorkbook.FullName) Then
+            
+            ' ブックを読み取り専用で開く
+            Set srcWorkbook = Workbooks.Open(Filename:=file.Path, ReadOnly:=True)
+            
+            ' シート「チェック仕様」が存在するかチェック
+            On Error Resume Next
+            Set ws = srcWorkbook.Sheets("チェック仕様")
+            On Error GoTo 0
+            
+            ' シートが存在した場合のみコピー処理を実行
+            If Not ws Is Nothing Then
+                ' 3桁の連番シート名を作成（例: 001, 002...）
+                sheetName = Format(serialNumber, "000")
+                
+                ' 「全チェック仕様」ブックの末尾にコピー
+                ws.Copy After:=destWorkbook.Sheets(destWorkbook.Sheets.Count)
+                
+                ' コピーしたシートの名前を変更
+                destWorkbook.Sheets(destWorkbook.Sheets.Count).Name = sheetName
+                
+                ' 連番をインクリメント
+                serialNumber = serialNumber + 1
+                
+                ' オブジェクトの初期化
+                Set ws = Nothing
+            End If
+            
+            ' 開いたブックを閉じる（保存しない）
+            srcWorkbook.Close SaveChanges:=False
+        End If
+    Next file
+    
+    ' サブフォルダがある場合、自分自身を再呼び出し（再帰処理）
+    For Each subFolder In folder.SubFolders
+        ProcessFolder subFolder
+    Next subFolder
+End Sub
