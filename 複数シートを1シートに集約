@@ -1,67 +1,65 @@
-Sub CopyAllSheetsToTotal()
-    Dim wsTotal As Worksheet
-    Dim ws As Worksheet
-    Dim lastRowTotal As Long
+Sub CopyAllSheetsData()
+    Dim wsDest As Worksheet
+    Dim wsSrc As Worksheet
+    Dim lastRowDest As Long
+    Dim lastRowSrc As Long
+    Dim lastColSrc As Long
     Dim copyRange As Range
-    Dim isFirstSheet As Boolean
+    Dim pasteRange As Range
     
-    ' 画面更新と警告の停止（処理の高速化）
+    ' 画面更新と警告を一時停止（処理高速化のため）
     Application.ScreenUpdating = False
     Application.DisplayAlerts = False
     
-    On Error GoTo ErrorHandler
-    
-    ' 貼り付け先シートの存在チェックと設定
+    ' コピー先のシートを設定
     On Error Resume Next
-    Set wsTotal = ThisWorkbook.Sheets("全シート")
-    On Error GoTo ErrorHandler
+    Set wsDest = Sheets("全シート")
+    On Error GoTo 0
     
-    If wsTotal Is Nothing Then
-        MsgBox "「全シート」という名前のシートが見つかりません。", vbCritical, "エラー"
+    ' 「全シート」がない場合はエラーメッセージを出して終了
+    If wsDest Is Nothing Then
+        MsgBox "「全シート」という名前のシートが見つかりません。", vbCritical
         Exit Sub
     End If
     
-    ' 「全シート」の既存データ（A1以降）をクリアしたい場合は以下のコメントアウトを解除してください
-    ' wsTotal.UsedRange.Clear
-    
-    isFirstSheet = True
-    
-    ' 全シートをループ処理
-    For Each ws In ThisWorkbook.Worksheets
-        ' 「全シート」自体はコピー元から除外する
-        If ws.Name <> wsTotal.Name Then
+    ' 各シートをループ処理
+    For Each wsSrc In ThisWorkbook.Worksheets
+        
+        ' コピー先シート、または非表示シートはスキップ
+        If wsSrc.Name <> wsDest.Name And wsSrc.Visible = xlSheetVisible Then
             
-            ' A1セルを起点としたデータが存在する範囲を取得
-            Set copyRange = ws.Range("A1").CurrentRegion
+            ' コピー元シートのA1から値のある最終行・最終列を取得
+            lastRowSrc = wsSrc.Cells(wsSrc.Rows.Count, "A").End(xlUp).Row
+            lastColSrc = wsSrc.Cells(1, wsSrc.Columns.Count).End(xlToLeft).Column
             
-            ' シートにデータ（A1）が存在する場合のみ処理
-            If Not copyRange Is Nothing And ws.Range("A1").Value <> "" Then
+            ' A1セルに値がある場合のみ処理を実行
+            If wsSrc.Range("A1").Value <> "" Then
                 
-                ' 「全シート」の現在の最終行を取得
-                lastRowTotal = wsTotal.Cells(wsTotal.Rows.Count, "A").End(xlUp).Row
+                ' コピー元の範囲を設定 (A1からデータが存在する右下まで)
+                Set copyRange = wsSrc.Range(wsSrc.Cells(1, 1), wsSrc.Cells(lastRowSrc, lastColSrc))
                 
-                ' 貼り付け先の判定
-                If lastRowTotal = 1 And wsTotal.Range("A1").Value = "" Then
-                    ' 「全シート」が完全に空なら、A1にそのまま貼り付け
-                    copyRange.Copy wsTotal.Range("A1")
+                ' コピー先の最終行を取得（初回は1行目、2回目以降は最終行の次）
+                lastRowDest = wsDest.Cells(wsDest.Rows.Count, "A").End(xlUp).Row
+                If wsDest.Range("A1").Value = "" Then
+                    lastRowDest = 1
                 Else
-                    ' 既にデータがある場合は、最終行の「1行下」に貼り付け
-                    copyRange.Copy wsTotal.Cells(lastRowTotal + 1, "A")
+                    lastRowDest = lastRowDest + 1
                 End If
+                
+                ' データをコピーして「全シート」のB列以降に貼り付け（A列を空けるため）
+                Set pasteRange = wsDest.Cells(lastRowDest, 2)
+                copyRange.Copy pasteRange
+                
+                ' 貼り付けた行のA列に、コピー元シートのA1セルの値を書き込む
+                wsDest.Range(wsDest.Cells(lastRowDest, 1), wsDest.Cells(lastRowDest + copyRange.Rows.Count - 1, 1)).Value = wsSrc.Range("A1").Value
                 
             End If
         End If
-    Next ws
+    Next wsSrc
     
-    MsgBox "すべてのシートのデータ集約が完了しました。", vbInformation, "完了"
-
-ExitHandler:
-    ' 設定の復元
+    ' 設定を元に戻す
     Application.ScreenUpdating = True
     Application.DisplayAlerts = True
-    Exit Sub
-
-ErrorHandler:
-    MsgBox "予期せぬエラーが発生しました: " & Err.Description, vbCritical, "エラー"
-    Resume ExitHandler
+    
+    MsgBox "データの集約が完了しました！", vbInformation
 End Sub
