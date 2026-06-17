@@ -82,12 +82,18 @@ Private Sub ProcessFolder(currentFolder As Object)
                     With targetWb.Sheets(targetWb.Sheets.Count)
                         .Name = sheetName
                         
-                        ' 4. 1行目に行を追加し、ファイル名をA1にセット
+                        ' 4. 1行目に行を追加
                         .Rows(1).Insert Shift:=xlDown
-                        .Range("A1").Value = sourceWb.Name
                         
-                        ' 1行目のセルを折り返しなしに設定
-                        .Rows(1).WrapText = False
+                        ' 追加した1行目の書式設定（折り返しなし、左揃え、上揃え）
+                        With .Rows(1)
+                            .WrapText = False
+                            .HorizontalAlignment = xlHAlignLeft
+                            .VerticalAlignment = xlVAlignTop
+                        End With
+                        
+                        ' A1にファイル名をセット
+                        .Range("A1").Value = sourceWb.Name
                     End With
                     
                     ' カウントをインクリメント
