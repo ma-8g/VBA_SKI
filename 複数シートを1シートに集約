@@ -1,0 +1,67 @@
+Sub CopyAllSheetsToTotal()
+    Dim wsTotal As Worksheet
+    Dim ws As Worksheet
+    Dim lastRowTotal As Long
+    Dim copyRange As Range
+    Dim isFirstSheet As Boolean
+    
+    ' 画面更新と警告の停止（処理の高速化）
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    On Error GoTo ErrorHandler
+    
+    ' 貼り付け先シートの存在チェックと設定
+    On Error Resume Next
+    Set wsTotal = ThisWorkbook.Sheets("全シート")
+    On Error GoTo ErrorHandler
+    
+    If wsTotal Is Nothing Then
+        MsgBox "「全シート」という名前のシートが見つかりません。", vbCritical, "エラー"
+        Exit Sub
+    End If
+    
+    ' 「全シート」の既存データ（A1以降）をクリアしたい場合は以下のコメントアウトを解除してください
+    ' wsTotal.UsedRange.Clear
+    
+    isFirstSheet = True
+    
+    ' 全シートをループ処理
+    For Each ws In ThisWorkbook.Worksheets
+        ' 「全シート」自体はコピー元から除外する
+        If ws.Name <> wsTotal.Name Then
+            
+            ' A1セルを起点としたデータが存在する範囲を取得
+            Set copyRange = ws.Range("A1").CurrentRegion
+            
+            ' シートにデータ（A1）が存在する場合のみ処理
+            If Not copyRange Is Nothing And ws.Range("A1").Value <> "" Then
+                
+                ' 「全シート」の現在の最終行を取得
+                lastRowTotal = wsTotal.Cells(wsTotal.Rows.Count, "A").End(xlUp).Row
+                
+                ' 貼り付け先の判定
+                If lastRowTotal = 1 And wsTotal.Range("A1").Value = "" Then
+                    ' 「全シート」が完全に空なら、A1にそのまま貼り付け
+                    copyRange.Copy wsTotal.Range("A1")
+                Else
+                    ' 既にデータがある場合は、最終行の「1行下」に貼り付け
+                    copyRange.Copy wsTotal.Cells(lastRowTotal + 1, "A")
+                End If
+                
+            End If
+        End If
+    Next ws
+    
+    MsgBox "すべてのシートのデータ集約が完了しました。", vbInformation, "完了"
+
+ExitHandler:
+    ' 設定の復元
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "予期せぬエラーが発生しました: " & Err.Description, vbCritical, "エラー"
+    Resume ExitHandler
+End Sub
