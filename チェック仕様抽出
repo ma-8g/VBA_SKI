@@ -1,88 +1,92 @@
 Option Explicit
 
-Dim serialNumber As Long ' 連番管理用の変数
-Dim destWorkbook As Workbook ' コピー先の「全チェック仕様」ブック
+Dim targetBk As Workbook
+Dim sheetCount As Long
 
-Sub MergeCheckSheets()
-    Dim targetFolder As String
+Sub 集約マクロ_開始()
+    Dim rFolder As String
     Dim fso As Object
     
-    ' 1. コピー先（このマクロを実行しているブック）を設定
-    Set destWorkbook = ThisWorkbook
-    serialNumber = 1 ' 連番を001からスタート
+    ' 集約先のブック（このマクロを実行しているブック）をセット
+    Set targetBk = ThisWorkbook
+    sheetCount = 0
     
-    ' 2. 処理対象のメインフォルダを選択
+    ' 処理対象のメインフォルダを選択
     With Application.FileDialog(msoFileDialogFolderPicker)
-        .Title = "対象のメインフォルダを選択してください"
+        .Title = "処理対象のフォルダを選択してください"
         If .Show = True Then
-            targetFolder = .SelectedItems(1)
+            rFolder = .SelectedItems(1)
         Else
-            MsgBox "処理がキャンセルされました。", vbInformation
+            MsgBox "処理をキャンセルしました。", vbInformation
             Exit Sub
         End If
     End With
     
-    ' 画面更新と警告を非表示にして高速化
+    ' 画面更新と警告非表示で高速化
     Application.ScreenUpdating = False
     Application.DisplayAlerts = False
     
-    ' 3. FSOを使ってフォルダの再帰処理を開始
+    ' FileSystemObjectを使ってフォルダ内を再帰的に処理
     Set fso = CreateObject("Scripting.FileSystemObject")
-    ProcessFolder fso.GetFolder(targetFolder)
+    Call ProcessFiles(fso.GetFolder(rFolder))
     
     ' 設定を元に戻す
     Application.ScreenUpdating = True
     Application.DisplayAlerts = True
     
-    MsgBox "完了しました！" & vbCrLf & "集約シート数: " & (serialNumber - 1) & " 枚", vbInformation
+    MsgBox "処理が完了しました！" & vbCrLf & "集約シート数: " & sheetCount & " 件", vbInformation
 End Sub
 
-' フォルダを再帰的に処理するサブプロシージャ
-Sub ProcessFolder(folder As Object)
-    Dim file As Object
+' フォルダを再帰処理するサブプロシージャ
+Sub ProcessFiles(currentFolder As Object)
     Dim subFolder As Object
-    Dim srcWorkbook As Workbook
+    Dim file As Object
+    Dim sourceBk As Workbook
     Dim ws As Worksheet
-    Dim sheetName As String
+    Dim newSheetName As String
     
-    ' フォルダ内のファイルを1つずつ確認
-    For Each file In folder.Files
-        ' Excelファイル（拡張子が .xls*）かつ、一時ファイル（~$）でない場合
-        If (file.Name Like "*.xls*") And (Not file.Name Like "~$*") And (file.Path <> destWorkbook.FullName) Then
+    ' 1. フォルダ内のファイルをひとつずつ確認
+    For Each file In currentFolder.Files
+        ' Excelファイルかつ、一時ファイル（~$で始まるもの）や自分自身でない場合
+        If (file.Name Like "*.xls*") And (Not file.Name Like "~$*") And (file.Name <> targetBk.Name) Then
             
-            ' ブックを読み取り専用で開く
-            Set srcWorkbook = Workbooks.Open(Filename:=file.Path, ReadOnly:=True)
+            ' ブックを開く
+            Set sourceBk = Workbooks.Open(file.Path, ReadOnly:=True)
             
-            ' シート「チェック仕様」が存在するかチェック
+            ' 「チェック仕様」シートが存在するかチェック
             On Error Resume Next
-            Set ws = srcWorkbook.Sheets("チェック仕様")
+            Set ws = sourceBk.Sheets("チェック仕様")
             On Error GoTo 0
             
-            ' シートが存在した場合のみコピー処理を実行
             If Not ws Is Nothing Then
-                ' 3桁の連番シート名を作成（例: 001, 002...）
-                sheetName = Format(serialNumber, "000")
+                ' カウントアップ（連番用）
+                sheetCount = sheetCount + 1
+                ' 3桁の連番（001, 002...）を作成
+                newSheetName = Format(sheetCount, "000")
                 
-                ' 「全チェック仕様」ブックの末尾にコピー
-                ws.Copy After:=destWorkbook.Sheets(destWorkbook.Sheets.Count)
+                ' 2. シートを「全チェック仕様」ブックの末尾にコピー
+                ws.Copy After:=targetBk.Sheets(targetBk.Sheets.Count)
                 
-                ' コピーしたシートの名前を変更
-                destWorkbook.Sheets(destWorkbook.Sheets.Count).Name = sheetName
-                
-                ' 連番をインクリメント
-                serialNumber = serialNumber + 1
-                
-                ' オブジェクトの初期化
-                Set ws = Nothing
+                ' コピーされたシートに対して処理
+                With targetBk.Sheets(targetBk.Sheets.Count)
+                    ' 3. シート名を連番に変更
+                    .Name = newSheetName
+                    
+                    ' 4. 1行目に行を追加し、A1にコピー元ファイル名をセット
+                    .Rows(1).Insert Shift:=xlDown
+                    .Range("A1").Value = sourceBk.Name
+                    ' 少し目立たせるために背景色や太字にしたい場合はここを調整してください
+                End With
             End If
             
-            ' 開いたブックを閉じる（保存しない）
-            srcWorkbook.Close SaveChanges:=False
+            ' 変数の初期化とブックを閉じる（保存しない）
+            Set ws = Nothing
+            sourceBk.Close SaveChanges:=False
         End If
     Next file
     
-    ' サブフォルダがある場合、自分自身を再呼び出し（再帰処理）
-    For Each subFolder In folder.SubFolders
-        ProcessFolder subFolder
+    ' サブフォルダがある場合は、自分自身を呼び出して再帰処理
+    For Each subFolder In currentFolder.SubFolders
+        Call ProcessFiles(subFolder)
     Next subFolder
 End Sub
